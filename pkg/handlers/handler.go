@@ -10,7 +10,7 @@ func (h *Handler) InitRoutes() *gin.Engine {
 
 	api := router.Group("/api")
 	{
-		api.POST("/convert/:path", h.convertVideo)
+		api.POST("/convert", h.convertVideo)
 	}
 
 	return router
