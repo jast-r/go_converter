@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"os"
 
 	goconverter "github.com/jast-r/go_converter"
 	"github.com/jast-r/go_converter/pkg/handlers"
@@ -10,18 +10,20 @@ import (
 )
 
 func main() {
+	logrus.New()
 	logrus.SetFormatter(new(logrus.JSONFormatter))
+	logrus.SetOutput(os.Stderr)
 
 	if err := initConfig(); err != nil {
 		logrus.Fatalf("error initializing configs: %s", err.Error())
 	}
 
 	handler := new(handlers.Handler)
-
 	server := new(goconverter.Server)
+
 	err := server.Run(viper.GetString("port"), handler.InitRoutes())
 	if err != nil {
-		log.Fatalln(err)
+		logrus.Fatal(err)
 	}
 }
 
