@@ -3,8 +3,8 @@ package handlers
 import (
 	"bytes"
 	"fmt"
+	"math/rand"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -24,7 +24,9 @@ type convertInput struct {
 var (
 	convertArray     []string
 	sourceArray      []string
-	idsArray         []string
+	queueArray       []string
+	mapConvArray     = make(map[string]string)
+	pathArray        = make(chan map[string]string)
 	statusInProgress = "in progress"
 	statusInQueue    = "in queue"
 	statusDone       = "convertation done"
@@ -32,10 +34,25 @@ var (
 	mutex            sync.RWMutex
 )
 
+func init() {
+	rand.Seed(time.Now().UnixNano())
+
+	// var val map[string]string
+	// var open bool
+	// var stringForPlatformReq []byte
+	// var counter int
+	// var outPath string
+	// counter = 0
+
+	// go func() {
+	// 	for {
+
+	// 	}
+	// }()
+}
+
 func (h *Handler) convertVideo(ctx *gin.Context) {
 	var input convertInput
-	var stringForPlatformReq []byte
-	var currentPath string
 	var err error
 
 	if err = ctx.BindJSON(&input); err != nil {
@@ -44,60 +61,35 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 		return
 	}
 
-	id := ctx.Param("id")
+	fmt.Println("hello")
+
+	// id := ctx.Param("id")
+
 	file := filepath.Base(input.Path)
 	fileName := file[:strings.Index(file, ".")]
-	converter := ffmpeg.Input(input.Path)
-	outPath := viper.GetString("output_directory") + "/" + id + fileName + ".mp4"
-	fmt.Println(viper.GetString("output_directory"))
+	outPath := viper.GetString("output_directory") + "/" + fileName + ".mp4"
+	// sourceArray = append(sourceArray, input.Path)
+	// convertArray = append(convertArray, outPath)
+	mapConvArray[input.Path] = outPath
+	handleRequest(input.Path, outPath, false)
+}
 
-	idsArray = append(idsArray, id)
-	convertArray = append(convertArray, outPath)
-	sourceArray = append(sourceArray, input.Path)
-
-	fmt.Println(len(convertArray))
-	if len(convertArray) < 3 || input.Status == statusDone {
-		go func() {
-			mutex.Lock()
-			currentPath, convertArray = convertArray[0], convertArray[1:]
-			mutex.Unlock()
-
-			if _, err := os.Stat(currentPath); err == os.ErrNotExist {
-				err = fmt.Errorf("%s does`t exist", currentPath)
-				newErrorResponse(ctx, http.StatusInternalServerError, err.Error())
-				return
-			}
-
-			start := time.Now()
-			err = converter.Output(currentPath).OverWriteOutput().Run()
-			if err != nil {
-				newErrorResponse(ctx, http.StatusInternalServerError, err.Error())
-				return
-			}
-			stringForPlatformReq = []byte(fmt.Sprintf(requestTemplate, statusDone, currentPath))
-			if err := requestToPlatform(stringForPlatformReq); err != nil {
-				newErrorResponse(ctx, http.StatusInternalServerError, err.Error())
-				return
-			}
-			logrus.Println(time.Since(start))
-
-			// Посылаем запрос на обработку следующего элемента очереди
-			mutex.Lock()
-			if len(convertArray) > 2 {
-				stringForQueueReq := []byte(fmt.Sprintf(`{"status":"%s", "path": "%s"}`, statusDone, sourceArray[0]))
-				url := fmt.Sprintf("http://localhost:%s/api/convert/%s", viper.GetString("port"), idsArray[0])
-				http.Post(url, "application/json", bytes.NewBuffer(stringForQueueReq))
-			}
-			fmt.Println(idsArray, convertArray)
-			idsArray = idsArray[1:]
-			sourceArray = convertArray[1:]
-			mutex.Unlock()
-		}()
-	} else {
-		stringForPlatformReq = []byte(fmt.Sprintf(requestTemplate, statusInQueue, outPath))
-		if err := requestToPlatform(stringForPlatformReq); err != nil {
-			newErrorResponse(ctx, http.StatusInternalServerError, err.Error())
+func handleRequest(src_path, dst_path string, next bool) {
+	if (len(mapConvArray) < 3 || next) && len(mapConvArray) > 0 {
+		strForPlatform := []byte(fmt.Sprintf(requestTemplate, statusInProgress, dst_path))
+		if err := requestToPlatform([]byte(strForPlatform)); err != nil {
+			newErrorResponse(&gin.Context{}, http.StatusInternalServerError, err.Error())
+			return
 		}
+		logrus.Println(src_path, dst_path)
+		go startConvertation(src_path, dst_path)
+	} else {
+		strForPlatform := []byte(fmt.Sprintf(requestTemplate, statusInQueue, dst_path))
+		if err := requestToPlatform([]byte(strForPlatform)); err != nil {
+			newErrorResponse(&gin.Context{}, http.StatusInternalServerError, err.Error())
+			return
+		}
+		queueArray = append(queueArray, src_path)
 	}
 }
 
@@ -112,5 +104,34 @@ func requestToPlatform(request []byte) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func startConvertation(src_path, dst_path string) error {
+	start := time.Now()
+	converter := ffmpeg.Input(src_path)
+	err := converter.Output(dst_path).OverWriteOutput().Run()
+	if err != nil {
+		logrus.Error(err)
+	}
+	logrus.Println("convertation time: " + time.Since(start).String())
+
+	strForPlatform := []byte(fmt.Sprintf(requestTemplate, statusDone, dst_path))
+	if err := requestToPlatform([]byte(strForPlatform)); err != nil {
+		newErrorResponse(nil, http.StatusInternalServerError, err.Error())
+		return err
+	}
+
+	if len(queueArray) > 0 {
+		var next string
+		mutex.Lock()
+		logrus.Println(queueArray)
+		next = queueArray[0]
+		queueArray = queueArray[1:]
+		delete(mapConvArray, dst_path)
+		mutex.Unlock()
+		handleRequest(next, mapConvArray[next], true)
+	}
+
 	return nil
 }
