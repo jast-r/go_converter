@@ -8,9 +8,9 @@ type Handler struct {
 func (h *Handler) InitRoutes() *gin.Engine {
 	router := gin.New()
 
-	api := router.Group("/api")
+	api := router.Group("/api", h.keyAuth)
 	{
-		api.POST("/convert/:id", h.convertVideo)
+		api.POST("/convert", h.convertVideo)
 	}
 
 	return router

@@ -2,9 +2,10 @@ package handlers
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
-	"math/rand"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -21,35 +22,20 @@ type convertInput struct {
 	Status string `json:"status"`
 }
 
-var (
-	convertArray     []string
-	sourceArray      []string
-	queueArray       []string
-	mapConvArray     = make(map[string]string)
-	pathArray        = make(chan map[string]string)
+const (
 	statusInProgress = "in progress"
 	statusInQueue    = "in queue"
 	statusDone       = "convertation done"
-	requestTemplate  = `{"status":"%s", "output_path": "%s"}`
-	mutex            sync.RWMutex
+	statusFailed     = "convertation for %s failed: %s"
+	requestTemplate  = `{"status":"%s", "source_path": "%s", "output_path": "%s"}`
 )
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-
-	// var val map[string]string
-	// var open bool
-	// var stringForPlatformReq []byte
-	// var counter int
-	// var outPath string
-	// counter = 0
-
-	// go func() {
-	// 	for {
-
-	// 	}
-	// }()
-}
+var (
+	nextPath     string
+	queueArray   []string
+	mapConvArray = make(map[string]string)
+	mutex        sync.RWMutex
+)
 
 func (h *Handler) convertVideo(ctx *gin.Context) {
 	var input convertInput
@@ -61,40 +47,50 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 		return
 	}
 
-	fmt.Println("hello")
+	if _, err := os.Stat(input.Path); err == nil {
+		file := filepath.Base(input.Path)
+		fileName := file[:strings.Index(file, ".")]
+		outPath := viper.GetString("output_directory") + "/" + fileName + ".mp4"
 
-	// id := ctx.Param("id")
+		mapConvArray[input.Path] = outPath
+		if reqErr := handleRequest(input.Path, outPath, false); reqErr != nil {
+			newErrorResponse(ctx, http.StatusInternalServerError, reqErr.Error())
+			return
+		} else {
+			ctx.JSON(http.StatusAccepted, map[string]string{
+				"status":   "accepted",
+				"dst_path": outPath,
+			})
+		}
+	} else if errors.Is(err, os.ErrNotExist) {
+		newErrorResponse(ctx, http.StatusBadRequest, "file "+input.Path+" not exist")
+		return
+	} else {
+		newErrorResponse(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
 
-	file := filepath.Base(input.Path)
-	fileName := file[:strings.Index(file, ".")]
-	outPath := viper.GetString("output_directory") + "/" + fileName + ".mp4"
-	// sourceArray = append(sourceArray, input.Path)
-	// convertArray = append(convertArray, outPath)
-	mapConvArray[input.Path] = outPath
-	handleRequest(input.Path, outPath, false)
+	return
 }
 
-func handleRequest(src_path, dst_path string, next bool) {
-	if (len(mapConvArray) < 3 || next) && len(mapConvArray) > 0 {
-		strForPlatform := []byte(fmt.Sprintf(requestTemplate, statusInProgress, dst_path))
+func handleRequest(src_path, dst_path string, next bool) error {
+	if (len(mapConvArray) < viper.GetInt("max_workers") || next) && len(mapConvArray) > 0 {
+		strForPlatform := []byte(fmt.Sprintf(requestTemplate, statusInProgress, src_path, dst_path))
 		if err := requestToPlatform([]byte(strForPlatform)); err != nil {
-			newErrorResponse(&gin.Context{}, http.StatusInternalServerError, err.Error())
-			return
+			return err
 		}
-		logrus.Println(src_path, dst_path)
 		go startConvertation(src_path, dst_path)
 	} else {
-		strForPlatform := []byte(fmt.Sprintf(requestTemplate, statusInQueue, dst_path))
+		strForPlatform := []byte(fmt.Sprintf(requestTemplate, statusInQueue, src_path, dst_path))
 		if err := requestToPlatform([]byte(strForPlatform)); err != nil {
-			newErrorResponse(&gin.Context{}, http.StatusInternalServerError, err.Error())
-			return
+			return err
 		}
 		queueArray = append(queueArray, src_path)
 	}
+	return nil
 }
 
 func requestToPlatform(request []byte) error {
-	fmt.Println(string(request))
 	req, err := http.NewRequest("PATCH", viper.GetString("platform_endpoint"), bytes.NewBuffer(request))
 	if err != nil {
 		return err
@@ -107,31 +103,60 @@ func requestToPlatform(request []byte) error {
 	return nil
 }
 
-func startConvertation(src_path, dst_path string) error {
+func convertationFailed(err error, src_path, dst_path string) error {
+	err = fmt.Errorf(statusFailed, src_path, err.Error())
+	strForPlatform := []byte(fmt.Sprintf(requestTemplate, err.Error(), src_path, dst_path))
+	if err = requestToPlatform([]byte(strForPlatform)); err != nil {
+		newErrorResponse(&gin.Context{}, http.StatusInternalServerError, err.Error())
+		return err
+	}
+	return nil
+}
+
+func startConvertation(src_path, dst_path string) {
+	var err error
+	if src_path == "" {
+		err = fmt.Errorf("source path can`t be empty!")
+		if reqErr := convertationFailed(err, src_path, dst_path); reqErr != nil {
+			logrus.Error(reqErr)
+		}
+		return
+	}
+	if dst_path == "" {
+		err = fmt.Errorf("output path can`t be empty!")
+		if reqErr := convertationFailed(err, src_path, dst_path); reqErr != nil {
+			logrus.Error(reqErr)
+		}
+		return
+	}
+
 	start := time.Now()
 	converter := ffmpeg.Input(src_path)
-	err := converter.Output(dst_path).OverWriteOutput().Run()
+	err = converter.Output(dst_path).OverWriteOutput().Run()
 	if err != nil {
-		logrus.Error(err)
+		convertationFailed(err, src_path, dst_path)
+		return
 	}
-	logrus.Println("convertation time: " + time.Since(start).String())
+	logrus.Printf("convertation time for %s %s: ", src_path, time.Since(start).String())
 
-	strForPlatform := []byte(fmt.Sprintf(requestTemplate, statusDone, dst_path))
+	if len(mapConvArray) != 0 {
+		mutex.Lock()
+		delete(mapConvArray, src_path)
+		mutex.Unlock()
+	}
+
+	strForPlatform := []byte(fmt.Sprintf(requestTemplate, statusDone, src_path, dst_path))
 	if err := requestToPlatform([]byte(strForPlatform)); err != nil {
-		newErrorResponse(nil, http.StatusInternalServerError, err.Error())
-		return err
+		logrus.Error(err)
 	}
 
 	if len(queueArray) > 0 {
-		var next string
 		mutex.Lock()
-		logrus.Println(queueArray)
-		next = queueArray[0]
-		queueArray = queueArray[1:]
-		delete(mapConvArray, dst_path)
+		nextPath, queueArray = queueArray[0], queueArray[1:]
 		mutex.Unlock()
-		handleRequest(next, mapConvArray[next], true)
+		_, find := mapConvArray[nextPath]
+		if find {
+			handleRequest(nextPath, mapConvArray[nextPath], true)
+		}
 	}
-
-	return nil
 }
