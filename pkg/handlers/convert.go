@@ -111,6 +111,7 @@ func requestToPlatform(request []byte) error {
 
 func convertationFailed(err error, src_path, dst_path string) error {
 	err = fmt.Errorf(statusFailed, src_path, err.Error())
+	logrus.Error(err)
 	strForPlatform := []byte(fmt.Sprintf(requestTemplate, err.Error(), src_path, dst_path))
 	if err = requestToPlatform([]byte(strForPlatform)); err != nil {
 		newErrorResponse(&gin.Context{}, http.StatusInternalServerError, err.Error())
