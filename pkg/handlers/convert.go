@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
@@ -50,7 +50,7 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 	if _, err := os.Stat(input.Path); err == nil {
 		file := filepath.Base(input.Path)
 		fileName := file[:strings.Index(file, ".")]
-		outPath := viper.GetString("output_directory") + "/" + fileName + ".mp4"
+		outPath := os.Getenv("output_directory") + "/" + fileName + ".mp4"
 
 		mapConvArray[input.Path] = outPath
 		if reqErr := handleRequest(input.Path, outPath, false); reqErr != nil {
@@ -74,7 +74,11 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 }
 
 func handleRequest(src_path, dst_path string, next bool) error {
-	if (len(mapConvArray) < viper.GetInt("max_workers") || next) && len(mapConvArray) > 0 {
+	worker_count, err := strconv.Atoi(os.Getenv("max_workers"))
+	if err != nil {
+		return err
+	}
+	if (len(mapConvArray) < worker_count || next) && len(mapConvArray) > 0 {
 		strForPlatform := []byte(fmt.Sprintf(requestTemplate, statusInProgress, src_path, dst_path))
 		if err := requestToPlatform([]byte(strForPlatform)); err != nil {
 			return err
@@ -91,7 +95,7 @@ func handleRequest(src_path, dst_path string, next bool) error {
 }
 
 func requestToPlatform(request []byte) error {
-	req, err := http.NewRequest("PATCH", viper.GetString("platform_endpoint"), bytes.NewBuffer(request))
+	req, err := http.NewRequest("PATCH", os.Getenv("platform_endpoint"), bytes.NewBuffer(request))
 	if err != nil {
 		return err
 	}
