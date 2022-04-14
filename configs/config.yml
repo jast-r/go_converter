@@ -1,5 +1,0 @@
-port: "10000"
-output_directory: "/home/roman/Videos"
-platform_endpoint: "http://localhost:8080/" 
-log_path: "logs_converter"
-max_workers: 1
