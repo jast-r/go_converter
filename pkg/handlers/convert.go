@@ -49,8 +49,6 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 		return
 	}
 
-	input.Path = os.Getenv("source_directory") + "/" + input.Path
-
 	if _, err := os.Stat(input.Path); err == nil {
 		file := filepath.Base(input.Path)
 		fileName := file[:strings.Index(file, ".")]
@@ -140,9 +138,10 @@ func startConvertation(src_path, dst_path string) {
 	}
 
 	conv_path := os.Getenv("output_directory") + "/" + dst_path
+	source_path := os.Getenv("source_directory") + "/" + src_path
 
 	start := time.Now()
-	converter := ffmpeg.Input(src_path)
+	converter := ffmpeg.Input(source_path)
 	err = converter.Output(conv_path).OverWriteOutput().Run()
 	if err != nil {
 		convertationFailed(err, src_path, dst_path)
