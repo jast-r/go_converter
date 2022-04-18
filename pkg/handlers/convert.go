@@ -59,7 +59,7 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 			newErrorResponse(ctx, http.StatusInternalServerError, reqErr.Error())
 			return
 		} else {
-			ctx.JSON(http.StatusAccepted, map[string]string{
+			ctx.JSON(http.StatusOK, map[string]string{
 				"status":      statusAccepted,
 				"output_path": outPath,
 			})
