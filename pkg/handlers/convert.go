@@ -59,10 +59,7 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 			"status":      statusAccepted,
 			"output_path": outPath,
 		})
-		if reqErr := handleRequest(input.Path, outPath, false); reqErr != nil {
-			newErrorResponse(ctx, http.StatusInternalServerError, reqErr.Error())
-			return
-		}
+		defer handleRequest(input.Path, outPath, false)
 	} else if errors.Is(err, os.ErrNotExist) {
 		newErrorResponse(ctx, http.StatusBadRequest, "file "+input.Path+" not exist")
 		return
