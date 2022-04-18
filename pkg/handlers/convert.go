@@ -55,15 +55,11 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 		outPath := fileName + ".mp4"
 
 		mapConvArray[input.Path] = outPath
-		if reqErr := handleRequest(input.Path, outPath, false); reqErr != nil {
-			newErrorResponse(ctx, http.StatusInternalServerError, reqErr.Error())
-			return
-		} else {
-			ctx.JSON(http.StatusOK, map[string]string{
-				"status":      statusAccepted,
-				"output_path": outPath,
-			})
-		}
+		ctx.JSON(http.StatusOK, map[string]string{
+			"status":      statusAccepted,
+			"output_path": outPath,
+		})
+
 	} else if errors.Is(err, os.ErrNotExist) {
 		newErrorResponse(ctx, http.StatusBadRequest, "file "+input.Path+" not exist")
 		return
