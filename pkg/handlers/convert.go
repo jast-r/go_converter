@@ -59,7 +59,7 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 			"status":      statusAccepted,
 			"output_path": outPath,
 		})
-
+		go handleRequest(input.Path, outPath, false)
 	} else if errors.Is(err, os.ErrNotExist) {
 		newErrorResponse(ctx, http.StatusBadRequest, "file "+input.Path+" not exist")
 		return
@@ -67,11 +67,11 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 		newErrorResponse(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	return
 }
 
 func handleRequest(src_path, dst_path string, next bool) error {
+	time.Sleep(1 * time.Second)
 	worker_count, err := strconv.Atoi(os.Getenv("max_workers"))
 	if err != nil {
 		return err
