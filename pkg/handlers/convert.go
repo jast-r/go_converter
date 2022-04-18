@@ -49,7 +49,7 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 		return
 	}
 
-	if _, err := os.Stat(os.Getenv("output_directory") + "/" + input.Path); err == nil {
+	if _, err := os.Stat(os.Getenv("source_directory") + "/" + input.Path); err == nil {
 		file := filepath.Base(input.Path)
 		fileName := file[:strings.Index(file, ".")]
 		outPath := fileName + ".mp4"
