@@ -23,7 +23,7 @@ type convertInput struct {
 }
 
 const (
-	StatusAccepted       = "accepted"
+	statusAccepted       = "accepted"
 	statusInProgress     = "in progress"
 	statusInQueue        = "in queue"
 	statusDone           = "conversion done"
@@ -62,7 +62,7 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 			return
 		} else {
 			ctx.JSON(http.StatusAccepted, map[string]string{
-				"status":      StatusAccepted,
+				"status":      statusAccepted,
 				"output_path": outPath,
 			})
 		}
