@@ -55,11 +55,15 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 		outPath := fileName + ".mp4"
 
 		mapConvArray[input.Path] = outPath
-		ctx.JSON(http.StatusOK, map[string]string{
-			"status":      statusAccepted,
-			"output_path": outPath,
-		})
-		defer handleRequest(input.Path, outPath, false)
+		if reqErr := handleRequest(input.Path, outPath, false); reqErr != nil {
+			newErrorResponse(ctx, http.StatusInternalServerError, reqErr.Error())
+			return
+		} else {
+			ctx.JSON(http.StatusOK, map[string]string{
+				"status":      statusAccepted,
+				"output_path": outPath,
+			})
+		}
 	} else if errors.Is(err, os.ErrNotExist) {
 		newErrorResponse(ctx, http.StatusBadRequest, "file "+input.Path+" not exist")
 		return
@@ -77,10 +81,6 @@ func handleRequest(src_path, dst_path string, next bool) error {
 		return err
 	}
 	if (len(mapConvArray) < worker_count || next) && len(mapConvArray) > 0 {
-		strForPlatform := []byte(fmt.Sprintf(requestTemplate, statusInProgress, src_path, dst_path))
-		if err := requestToPlatform([]byte(strForPlatform)); err != nil {
-			return err
-		}
 		go startConvertation(src_path, dst_path)
 	} else {
 		strForPlatform := []byte(fmt.Sprintf(requestTemplate, statusInQueue, src_path, dst_path))
@@ -136,6 +136,11 @@ func startConvertation(src_path, dst_path string) {
 	conv_path := os.Getenv("output_directory") + "/" + dst_path
 	source_path := os.Getenv("source_directory") + "/" + src_path
 
+	strForPlatform := []byte(fmt.Sprintf(requestTemplate, statusInProgress, src_path, dst_path))
+	if err := requestToPlatform([]byte(strForPlatform)); err != nil {
+		logrus.Error(err)
+	}
+
 	start := time.Now()
 	converter := ffmpeg.Input(source_path)
 	err = converter.Output(conv_path).OverWriteOutput().Run()
@@ -151,7 +156,7 @@ func startConvertation(src_path, dst_path string) {
 		mutex.Unlock()
 	}
 
-	strForPlatform := []byte(fmt.Sprintf(requestTemplate, statusDone, src_path, dst_path))
+	strForPlatform = []byte(fmt.Sprintf(requestTemplate, statusDone, src_path, dst_path))
 	if err := requestToPlatform([]byte(strForPlatform)); err != nil {
 		logrus.Error(err)
 	}
