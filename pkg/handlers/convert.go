@@ -23,11 +23,13 @@ type convertInput struct {
 }
 
 const (
-	statusInProgress = "in progress"
-	statusInQueue    = "in queue"
-	statusDone       = "convertation done"
-	statusFailed     = "convertation for %s failed: %s"
-	requestTemplate  = `{"status":"%s", "source_path": "%s", "output_path": "%s"}`
+	StatusAccepted       = "accepted"
+	statusInProgress     = "in progress"
+	statusInQueue        = "in queue"
+	statusDone           = "conversion done"
+	statusFailed         = "conversion failed"
+	requestTemplate      = `{"status":"%s", "source_path": "%s", "output_path": "%s"}`
+	requestErrorTemplate = `{"status":"%s", "error":"%s", "source_path": "%s", "output_path": "%s"}`
 )
 
 var (
@@ -52,7 +54,7 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 	if _, err := os.Stat(input.Path); err == nil {
 		file := filepath.Base(input.Path)
 		fileName := file[:strings.Index(file, ".")]
-		outPath := os.Getenv("output_directory") + "/" + fileName + ".mp4"
+		outPath := fileName + ".mp4"
 
 		mapConvArray[input.Path] = outPath
 		if reqErr := handleRequest(input.Path, outPath, false); reqErr != nil {
@@ -60,8 +62,8 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 			return
 		} else {
 			ctx.JSON(http.StatusAccepted, map[string]string{
-				"status":   "accepted",
-				"dst_path": outPath,
+				"status":      StatusAccepted,
+				"output_path": outPath,
 			})
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
@@ -110,9 +112,9 @@ func requestToPlatform(request []byte) error {
 }
 
 func convertationFailed(err error, src_path, dst_path string) error {
-	err = fmt.Errorf(statusFailed, src_path, err.Error())
+	err = fmt.Errorf(requestErrorTemplate, statusFailed, err.Error(), src_path, dst_path)
 	logrus.Error(err)
-	strForPlatform := []byte(fmt.Sprintf(requestTemplate, err.Error(), src_path, dst_path))
+	strForPlatform := []byte(fmt.Sprintf(requestErrorTemplate, statusFailed, err.Error(), src_path, dst_path))
 	if err = requestToPlatform([]byte(strForPlatform)); err != nil {
 		newErrorResponse(&gin.Context{}, http.StatusInternalServerError, err.Error())
 		return err
@@ -137,9 +139,11 @@ func startConvertation(src_path, dst_path string) {
 		return
 	}
 
+	conv_path := os.Getenv("output_directory") + "/" + dst_path
+
 	start := time.Now()
 	converter := ffmpeg.Input(src_path)
-	err = converter.Output(dst_path).OverWriteOutput().Run()
+	err = converter.Output(conv_path).OverWriteOutput().Run()
 	if err != nil {
 		convertationFailed(err, src_path, dst_path)
 		return
