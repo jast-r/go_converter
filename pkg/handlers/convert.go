@@ -77,7 +77,7 @@ func handleRequest(src_path, dst_path string, next bool) error {
 	if err != nil {
 		logrus.Fatal(err)
 	}
-	if (len(mapConvArray) < worker_count || next) && len(mapConvArray) > 0 {
+	if (len(mapConvArray) <= worker_count || next) && len(mapConvArray) > 0 {
 		logrus.Printf("request %s in progress", src_path)
 		go startConvertation(src_path, dst_path)
 	} else {
