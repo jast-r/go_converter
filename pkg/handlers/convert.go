@@ -60,6 +60,7 @@ func (h *Handler) convertVideo(ctx *gin.Context) {
 			"output_path": outPath,
 		})
 		go handleRequest(input.Path, outPath, false)
+		logrus.Printf("request %s accepted", input.Path)
 		return
 	} else if errors.Is(err, os.ErrNotExist) {
 		newErrorResponse(ctx, http.StatusBadRequest, "file "+input.Path+" not exist")
@@ -77,8 +78,10 @@ func handleRequest(src_path, dst_path string, next bool) error {
 		logrus.Fatal(err)
 	}
 	if (len(mapConvArray) < worker_count || next) && len(mapConvArray) > 0 {
+		logrus.Printf("request %s in progress", src_path)
 		go startConvertation(src_path, dst_path)
 	} else {
+		logrus.Println("request %s in queue", dst_path)
 		strForPlatform := []byte(fmt.Sprintf(requestTemplate, statusInQueue, src_path, dst_path))
 		if err := requestToPlatform([]byte(strForPlatform)); err != nil {
 			logrus.Error(err)
@@ -137,6 +140,7 @@ func startConvertation(src_path, dst_path string) {
 		logrus.Error(err)
 	}
 
+	logrus.Printf("convertation start for %s", src_path)
 	start := time.Now()
 	converter := ffmpeg.Input(source_path)
 	err = converter.Output(conv_path).OverWriteOutput().Run()
