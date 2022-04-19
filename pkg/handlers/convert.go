@@ -74,7 +74,7 @@ func handleRequest(src_path, dst_path string, next bool) error {
 	time.Sleep(1 * time.Second)
 	worker_count, err := strconv.Atoi(os.Getenv("max_workers"))
 	if err != nil {
-		return err
+		logrus.Fatal(err)
 	}
 	if (len(mapConvArray) < worker_count || next) && len(mapConvArray) > 0 {
 		go startConvertation(src_path, dst_path)
